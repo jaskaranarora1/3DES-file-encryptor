@@ -9,8 +9,9 @@ stored on disk as Base64 text so they are easy to copy, back up, and load.
 
 import base64
 
-from Crypto.Cipher import DES3
-from Crypto.Random import get_random_bytes
+# PyCryptodome is the maintained fork; Bandit B413 is a false positive here.
+from Crypto.Cipher import DES3              # nosec B413
+from Crypto.Random import get_random_bytes  # nosec B413
 
 KEY_SIZE = 24  # 3-key Triple DES
 

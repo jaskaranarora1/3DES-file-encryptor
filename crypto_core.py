@@ -28,11 +28,13 @@ import io
 import os
 import zipfile
 
-from Crypto.Cipher import DES3
-from Crypto.Hash import HMAC, SHA256
-from Crypto.Protocol.KDF import HKDF
-from Crypto.Random import get_random_bytes
-from Crypto.Util.Padding import pad, unpad
+# PyCryptodome is the actively maintained fork of pyCrypto (same import
+# namespace). Bandit B413 incorrectly flags it as the deprecated pyCrypto.
+from Crypto.Cipher import DES3              # nosec B413
+from Crypto.Hash import HMAC, SHA256        # nosec B413
+from Crypto.Protocol.KDF import HKDF       # nosec B413
+from Crypto.Random import get_random_bytes  # nosec B413
+from Crypto.Util.Padding import pad, unpad  # nosec B413
 
 # --- container constants ---
 MAGIC = b"3DEF"

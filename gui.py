@@ -58,7 +58,7 @@ class EncryptorApp(ctk.CTk):
         self.minsize(520, 670)
         try:
             self.iconbitmap(resource_path("app.ico"))
-        except Exception:
+        except Exception:  # nosec B110 - icon missing is non-critical
             pass
 
         self.current_key = None

@@ -1,24 +1,27 @@
-# --- Secrets: never commit encryption keys or encrypted test files ---
-*.key
-*.enc
-
-# --- Python ---
+# Python
 __pycache__/
 *.py[cod]
 *.pyo
 
-# --- Virtual environments ---
-venv/
-.venv/
-env/
-
-# --- PyInstaller build output ---
+# PyInstaller build artifacts
 build/
 dist/
 *.spec
 
-# --- IDE / OS ---
-.vscode/
-.idea/
+# Encrypted test files
+*.enc
+
+# Key files (never commit keys)
+*.key
+
+# OS files
 .DS_Store
 Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Submission folders (local only)
+Presentation/
+Report/
