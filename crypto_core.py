@@ -3,23 +3,30 @@ crypto_core.py
 ==============
 Core cryptographic operations for the 3DES File Encryptor.
 
-Provides authenticated file encryption using Triple DES (3DES / DESede)
-in CBC mode with PKCS#7 padding, plus HMAC-SHA256 integrity protection
-following the Encrypt-then-MAC construction.
+Authenticated encryption of any file OR folder using Triple DES
+(3DES / DESede) in CBC mode with PKCS#7 padding, plus HMAC-SHA256
+integrity protection (Encrypt-then-MAC).
 
-Encrypted file layout (.enc):
+Encrypted container (.enc) layout:
 
     +---------+----------+---------+----------+--------------------+
     | MAGIC   | VERSION  | IV      | HMAC tag | ciphertext         |
     | 4 bytes | 1 byte   | 8 bytes | 32 bytes | variable           |
     +---------+----------+---------+----------+--------------------+
 
-The HMAC tag authenticates MAGIC || VERSION || IV || ciphertext, so any
-tampering, corruption, or use of the wrong key is detected *before* the
-data is decrypted. The MAC key is derived from the master key with
-HKDF-SHA256 (key-separation principle: never reuse one key for two
-purposes).
+The first byte of the *decrypted* payload is a type tag (0 = file,
+1 = zipped folder), so the container format itself is unchanged and the
+type marker is protected by both encryption and the HMAC. Folders are
+zipped in memory before encryption and re-extracted on decryption.
+
+The HMAC tag authenticates MAGIC || VERSION || IV || ciphertext, so a
+wrong key, corruption, or tampering is detected before decryption. The
+MAC key is derived from the master key with HKDF-SHA256 (key separation).
 """
+
+import io
+import os
+import zipfile
 
 from Crypto.Cipher import DES3
 from Crypto.Hash import HMAC, SHA256
@@ -27,14 +34,16 @@ from Crypto.Protocol.KDF import HKDF
 from Crypto.Random import get_random_bytes
 from Crypto.Util.Padding import pad, unpad
 
-# ---------------------------------------------------------------------------
-# File format constants
-# ---------------------------------------------------------------------------
-MAGIC = b"3DEF"          # "3DES Encrypted File" marker
+# --- container constants ---
+MAGIC = b"3DEF"
 VERSION = 1
-IV_SIZE = 8              # 3DES block size is 8 bytes
-TAG_SIZE = 32            # HMAC-SHA256 output size
+IV_SIZE = 8
+TAG_SIZE = 32
 HEADER_SIZE = len(MAGIC) + 1 + IV_SIZE + TAG_SIZE  # 45 bytes
+
+# --- payload type tags (first byte of the decrypted payload) ---
+TYPE_FILE = 0
+TYPE_FOLDER = 1
 
 
 class CryptoError(Exception):
@@ -53,16 +62,12 @@ def _validate_key(key: bytes) -> None:
 
 
 def _derive_mac_key(master_key: bytes) -> bytes:
-    """
-    Derive a separate 32-byte HMAC key from the master key using HKDF-SHA256.
-    Encryption uses the master key directly; authentication uses this derived
-    key, so the two roles never share key material.
-    """
+    """Derive a separate 32-byte HMAC key from the master key (HKDF-SHA256)."""
     return HKDF(master_key, 32, None, SHA256, context=b"3DES-Encryptor-MAC-v1")
 
 
 # ---------------------------------------------------------------------------
-# Byte-level API
+# Byte-level authenticated encryption (the verified core)
 # ---------------------------------------------------------------------------
 def encrypt_bytes(plaintext: bytes, master_key: bytes) -> bytes:
     """Encrypt raw bytes and return a self-contained authenticated blob."""
@@ -73,7 +78,7 @@ def encrypt_bytes(plaintext: bytes, master_key: bytes) -> bytes:
     cipher = DES3.new(master_key, DES3.MODE_CBC, iv)
     ciphertext = cipher.encrypt(pad(plaintext, DES3.block_size))
 
-    preamble = MAGIC + bytes([VERSION]) + iv          # MAGIC | VERSION | IV
+    preamble = MAGIC + bytes([VERSION]) + iv
     tag = HMAC.new(mac_key, preamble + ciphertext, digestmod=SHA256).digest()
     return preamble + tag + ciphertext
 
@@ -94,9 +99,8 @@ def decrypt_bytes(blob: bytes, master_key: bytes) -> bytes:
     iv = blob[5:5 + IV_SIZE]
     tag = blob[5 + IV_SIZE:HEADER_SIZE]
     ciphertext = blob[HEADER_SIZE:]
-    preamble = blob[:5 + IV_SIZE]                      # MAGIC | VERSION | IV
+    preamble = blob[:5 + IV_SIZE]
 
-    # Encrypt-then-MAC: authenticate first, then decrypt.
     mac_key = _derive_mac_key(master_key)
     try:
         HMAC.new(mac_key, preamble + ciphertext, digestmod=SHA256).verify(tag)
@@ -114,21 +118,64 @@ def decrypt_bytes(blob: bytes, master_key: bytes) -> bytes:
 
 
 # ---------------------------------------------------------------------------
-# File-level API
+# Folder zipping helpers
 # ---------------------------------------------------------------------------
-def encrypt_file(in_path: str, out_path: str, master_key: bytes) -> None:
-    """Encrypt any file (TXT, PDF, DOCX, JPG, PNG, ... — works on raw bytes)."""
-    with open(in_path, "rb") as f:
-        data = f.read()
-    blob = encrypt_bytes(data, master_key)
+def _zip_folder_to_bytes(folder_path: str) -> bytes:
+    """Zip an entire folder (recursively) into an in-memory archive."""
+    base = os.path.basename(os.path.normpath(folder_path))
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for root, _, files in os.walk(folder_path):
+            for name in files:
+                full = os.path.join(root, name)
+                rel = os.path.relpath(full, folder_path)
+                zf.write(full, os.path.join(base, rel))
+    return buf.getvalue()
+
+
+def extract_zip_bytes(data: bytes, dest_dir: str) -> None:
+    """Extract a zipped-folder payload into ``dest_dir``."""
+    os.makedirs(dest_dir, exist_ok=True)
+    with zipfile.ZipFile(io.BytesIO(data)) as zf:
+        zf.extractall(dest_dir)
+
+
+# ---------------------------------------------------------------------------
+# Path-level API (file OR folder) used by the GUI
+# ---------------------------------------------------------------------------
+def encrypt_path(in_path: str, out_path: str, master_key: bytes) -> str:
+    """
+    Encrypt a file or a folder into a single ``.enc`` container.
+    Folders are zipped first. Returns "file" or "folder".
+    """
+    if os.path.isdir(in_path):
+        payload = bytes([TYPE_FOLDER]) + _zip_folder_to_bytes(in_path)
+        kind = "folder"
+    else:
+        with open(in_path, "rb") as f:
+            payload = bytes([TYPE_FILE]) + f.read()
+        kind = "file"
+    blob = encrypt_bytes(payload, master_key)
     with open(out_path, "wb") as f:
         f.write(blob)
+    return kind
 
 
-def decrypt_file(in_path: str, out_path: str, master_key: bytes) -> None:
-    """Decrypt a file previously produced by ``encrypt_file``."""
+def decrypt_blob(in_path: str, master_key: bytes):
+    """
+    Decrypt a ``.enc`` container and return ``(kind, data)`` where ``kind`` is
+    "file" or "folder" and ``data`` is the original file bytes or the zipped
+    folder bytes. The caller decides where to write/extract it.
+    """
     with open(in_path, "rb") as f:
         blob = f.read()
-    data = decrypt_bytes(blob, master_key)
-    with open(out_path, "wb") as f:
-        f.write(data)
+    payload = decrypt_bytes(blob, master_key)
+    if not payload:
+        raise CryptoError("Decrypted payload is empty or invalid.")
+    ptype = payload[0]
+    data = payload[1:]
+    if ptype == TYPE_FOLDER:
+        return "folder", data
+    if ptype == TYPE_FILE:
+        return "file", data
+    raise CryptoError("Unknown payload type tag.")

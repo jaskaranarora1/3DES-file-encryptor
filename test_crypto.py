@@ -1,10 +1,9 @@
 """
 test_crypto.py
 ==============
-Unit tests for the 3DES File Encryptor core (16 test cases).
+Unit tests for the 3DES File Encryptor core (dynamic testing, 17 cases).
 
 Run any of:
-    python -m unittest test_crypto.py
     python -m unittest -v test_crypto.py
     python test_crypto.py
 """
@@ -39,12 +38,12 @@ class TestCrypto(unittest.TestCase):
         self.assertEqual(crypto_core.decrypt_bytes(blob, self.key), data)
 
     def test_04_roundtrip_block_aligned(self):
-        data = b"A" * 64  # exact multiple of the 8-byte block size
+        data = b"A" * 64
         blob = crypto_core.encrypt_bytes(data, self.key)
         self.assertEqual(crypto_core.decrypt_bytes(blob, self.key), data)
 
     def test_05_roundtrip_large(self):
-        data = os.urandom(1_000_000)  # ~1 MB
+        data = os.urandom(1_000_000)
         blob = crypto_core.encrypt_bytes(data, self.key)
         self.assertEqual(crypto_core.decrypt_bytes(blob, self.key), data)
 
@@ -57,13 +56,13 @@ class TestCrypto(unittest.TestCase):
 
     def test_07_tampered_ciphertext_fails(self):
         blob = bytearray(crypto_core.encrypt_bytes(b"important data", self.key))
-        blob[-1] ^= 0x01  # flip a bit in the ciphertext
+        blob[-1] ^= 0x01
         with self.assertRaises(crypto_core.CryptoError):
             crypto_core.decrypt_bytes(bytes(blob), self.key)
 
     def test_08_tampered_iv_fails(self):
         blob = bytearray(crypto_core.encrypt_bytes(b"important data", self.key))
-        blob[6] ^= 0x01  # flip a bit inside the IV
+        blob[6] ^= 0x01
         with self.assertRaises(crypto_core.CryptoError):
             crypto_core.decrypt_bytes(bytes(blob), self.key)
 
@@ -101,25 +100,46 @@ class TestCrypto(unittest.TestCase):
     # -------------------------------------------------------- IV randomness
     def test_15_random_iv_unique_ciphertexts(self):
         data = b"same plaintext"
-        blob1 = crypto_core.encrypt_bytes(data, self.key)
-        blob2 = crypto_core.encrypt_bytes(data, self.key)
-        self.assertNotEqual(blob1, blob2)  # different random IV each time
-        self.assertEqual(crypto_core.decrypt_bytes(blob1, self.key), data)
-        self.assertEqual(crypto_core.decrypt_bytes(blob2, self.key), data)
+        b1 = crypto_core.encrypt_bytes(data, self.key)
+        b2 = crypto_core.encrypt_bytes(data, self.key)
+        self.assertNotEqual(b1, b2)
+        self.assertEqual(crypto_core.decrypt_bytes(b1, self.key), data)
+        self.assertEqual(crypto_core.decrypt_bytes(b2, self.key), data)
 
-    # ------------------------------------------------------- file handling
-    def test_16_file_roundtrip(self):
+    # ---------------------------------------------------- file round-trip
+    def test_16_file_path_roundtrip(self):
         with tempfile.TemporaryDirectory() as d:
-            src = os.path.join(d, "plain.txt")
-            enc = os.path.join(d, "plain.txt.enc")
-            dec = os.path.join(d, "plain_out.txt")
-            content = b"File-based round-trip test.\n" * 100
+            src = os.path.join(d, "plain.bin")
+            enc = os.path.join(d, "plain.enc")
+            content = os.urandom(4096)
             with open(src, "wb") as f:
                 f.write(content)
-            crypto_core.encrypt_file(src, enc, self.key)
-            crypto_core.decrypt_file(enc, dec, self.key)
-            with open(dec, "rb") as f:
-                self.assertEqual(f.read(), content)
+            self.assertEqual(crypto_core.encrypt_path(src, enc, self.key), "file")
+            kind, data = crypto_core.decrypt_blob(enc, self.key)
+            self.assertEqual(kind, "file")
+            self.assertEqual(data, content)
+
+    # -------------------------------------------------- folder round-trip
+    def test_17_folder_path_roundtrip(self):
+        with tempfile.TemporaryDirectory() as d:
+            folder = os.path.join(d, "proj")
+            os.makedirs(os.path.join(folder, "sub"))
+            with open(os.path.join(folder, "a.txt"), "wb") as f:
+                f.write(b"A" * 100)
+            payload = os.urandom(512)
+            with open(os.path.join(folder, "sub", "b.bin"), "wb") as f:
+                f.write(payload)
+            enc = os.path.join(d, "proj.enc")
+            self.assertEqual(crypto_core.encrypt_path(folder, enc, self.key),
+                             "folder")
+            kind, data = crypto_core.decrypt_blob(enc, self.key)
+            self.assertEqual(kind, "folder")
+            dest = os.path.join(d, "out")
+            crypto_core.extract_zip_bytes(data, dest)
+            with open(os.path.join(dest, "proj", "a.txt"), "rb") as f:
+                self.assertEqual(f.read(), b"A" * 100)
+            with open(os.path.join(dest, "proj", "sub", "b.bin"), "rb") as f:
+                self.assertEqual(f.read(), payload)
 
 
 if __name__ == "__main__":

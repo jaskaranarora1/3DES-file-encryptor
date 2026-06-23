@@ -1,11 +1,10 @@
 """
 gui.py
 ======
-Modern desktop interface for the 3DES File Encryptor, built with
-CustomTkinter (a themed UI toolkit on top of Tkinter).
+Modern desktop interface for the 3DES File Encryptor (CustomTkinter).
 
-The cryptography lives entirely in crypto_core.py / key_manager.py and is
-not touched here -- this module is purely the presentation layer.
+Supports encrypting/decrypting both single files and whole folders.
+All cryptography lives in crypto_core.py / key_manager.py.
 """
 
 import os
@@ -25,9 +24,7 @@ import key_manager
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")
 
-ACCENT       = "#3D7BFC"
-ACCENT_HOVER = "#2E6AE6"
-
+ACCENT, ACCENT_HOVER = "#3D7BFC", "#2E6AE6"
 CARD_FG  = ("#ffffff", "#1c1f26")
 ENTRY_FG = ("#f3f4f6", "#14171d")
 BORDER   = ("#e5e7eb", "#2c313b")
@@ -41,7 +38,6 @@ NEU_FG,  NEU_TX  = ("#f3f4f6", "#181b21"), MUTED
 
 
 def resource_path(rel: str) -> str:
-    """Path that works both in dev and inside a PyInstaller bundle."""
     base = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
     return os.path.join(base, rel)
 
@@ -58,15 +54,16 @@ class EncryptorApp(ctk.CTk):
     def __init__(self):
         super().__init__()
         self.title("3DES File Encryptor")
-        self.geometry("560x660")
-        self.minsize(520, 640)
+        self.geometry("560x690")
+        self.minsize(520, 670)
         try:
             self.iconbitmap(resource_path("app.ico"))
         except Exception:
             pass
 
         self.current_key = None
-        self.selected_file = None
+        self.selected_path = None       # file or folder path
+        self.selected_is_dir = False
         self.key_visible = False
 
         self._build_ui()
@@ -85,16 +82,14 @@ class EncryptorApp(ctk.CTk):
         header = ctk.CTkFrame(root, fg_color="transparent")
         header.grid(row=0, column=0, sticky="ew", pady=(0, 16))
         header.grid_columnconfigure(0, weight=1)
-
         titles = ctk.CTkFrame(header, fg_color="transparent")
         titles.grid(row=0, column=0, sticky="w")
         ctk.CTkLabel(titles, text="3DES File Encryptor",
                      font=ctk.CTkFont(size=24, weight="bold")).pack(anchor="w")
         ctk.CTkLabel(titles,
-                     text="Secure file encryption  ·  Triple DES + HMAC-SHA256",
+                     text="Encrypt files & folders  ·  Triple DES + HMAC-SHA256",
                      font=ctk.CTkFont(size=12), text_color=MUTED
                      ).pack(anchor="w", pady=(2, 0))
-
         self.mode_switch = ctk.CTkSegmentedButton(
             header, values=["Dark", "Light"], width=128,
             command=self._on_mode_change)
@@ -104,7 +99,6 @@ class EncryptorApp(ctk.CTk):
         # ---------- key card ----------
         key_card = self._card(root, 1)
         key_card.grid_columnconfigure(0, weight=1)
-
         krow = ctk.CTkFrame(key_card, fg_color="transparent")
         krow.grid(row=0, column=0, sticky="ew", padx=16, pady=(14, 8))
         krow.grid_columnconfigure(0, weight=1)
@@ -141,29 +135,40 @@ class EncryptorApp(ctk.CTk):
         self._btn(brow, "Save",     self.on_save_key,     2)
         self._btn(brow, "Copy",     self.on_copy_key,     3)
 
-        # ---------- file card ----------
+        # ---------- file / folder card ----------
         file_card = self._card(root, 2)
         file_card.grid_columnconfigure(0, weight=1)
-        ctk.CTkLabel(file_card, text="File",
+        ctk.CTkLabel(file_card, text="File or folder",
                      font=ctk.CTkFont(size=15, weight="bold")
                      ).grid(row=0, column=0, sticky="w", padx=16, pady=(14, 8))
 
         self.drop = ctk.CTkFrame(
             file_card, fg_color=ENTRY_FG, corner_radius=12,
             border_width=2, border_color=BORDER)
-        self.drop.grid(row=1, column=0, sticky="ew", padx=16, pady=(0, 16))
+        self.drop.grid(row=1, column=0, sticky="ew", padx=16, pady=(0, 10))
         self.drop.grid_columnconfigure(0, weight=1)
         self.drop_title = ctk.CTkLabel(
-            self.drop, text="Click to choose a file",
+            self.drop, text="Nothing selected",
             font=ctk.CTkFont(size=14, weight="bold"))
-        self.drop_title.grid(row=0, column=0, padx=16, pady=(22, 2))
+        self.drop_title.grid(row=0, column=0, padx=16, pady=(18, 2))
         self.drop_sub = ctk.CTkLabel(
-            self.drop, text="any file type \u2014 TXT, PDF, DOCX, JPG, PNG\u2026",
+            self.drop, text="choose a file or folder below",
             font=ctk.CTkFont(size=12), text_color=MUTED)
-        self.drop_sub.grid(row=1, column=0, padx=16, pady=(0, 22))
-        for w in (self.drop, self.drop_title, self.drop_sub):
-            w.configure(cursor="hand2")
-            w.bind("<Button-1>", lambda e: self.on_choose_file())
+        self.drop_sub.grid(row=1, column=0, padx=16, pady=(0, 18))
+
+        choose = ctk.CTkFrame(file_card, fg_color="transparent")
+        choose.grid(row=2, column=0, sticky="ew", padx=16, pady=(0, 16))
+        choose.grid_columnconfigure((0, 1), weight=1)
+        ctk.CTkButton(choose, text="Choose file...", height=38,
+                      command=self.on_choose_file, fg_color="transparent",
+                      border_width=1, border_color=BORDER, text_color=TEXT_BTN,
+                      hover_color=ENTRY_FG).grid(row=0, column=0, sticky="ew",
+                                                 padx=(0, 5))
+        ctk.CTkButton(choose, text="Choose folder...", height=38,
+                      command=self.on_choose_folder, fg_color="transparent",
+                      border_width=1, border_color=BORDER, text_color=TEXT_BTN,
+                      hover_color=ENTRY_FG).grid(row=0, column=1, sticky="ew",
+                                                 padx=(5, 0))
 
         # ---------- actions ----------
         actions = ctk.CTkFrame(root, fg_color="transparent")
@@ -274,8 +279,8 @@ class EncryptorApp(ctk.CTk):
         self.current_key = key
         self.key_var.set(key_manager.key_to_b64(key))
         self._set_key_state(True)
-        self._status("New 24-byte 3DES key generated. "
-                     "Save it so you can decrypt later.", "info")
+        self._status("New 24-byte 3DES key generated (Keying Option 1, odd "
+                     "parity). Save it so you can decrypt later.", "info")
 
     def on_save_key(self):
         key = self._require_key()
@@ -316,77 +321,135 @@ class EncryptorApp(ctk.CTk):
         self.update()
         self._status("Key copied to clipboard.", "info")
 
-    # ---------------------------------------------------------- file logic
+    # -------------------------------------------------- file/folder picking
     def on_choose_file(self):
         path = filedialog.askopenfilename(title="Choose a file")
         if not path:
             return
-        self.selected_file = path
+        self.selected_path = path
+        self.selected_is_dir = False
         size = human_size(os.path.getsize(path))
         self.drop_title.configure(text=os.path.basename(path))
-        self.drop_sub.configure(text=f"{size}  \u00b7  ready to encrypt or decrypt")
+        self.drop_sub.configure(text=f"{size}  \u00b7  file")
         self.drop.configure(border_color=ACCENT)
-        self._status(f"Selected: {os.path.basename(path)}  ({size})", "neutral")
+        self._status(f"Selected file: {os.path.basename(path)}  ({size})",
+                     "neutral")
 
-    # ----------------------------------------------------- encrypt/decrypt
+    def on_choose_folder(self):
+        path = filedialog.askdirectory(title="Choose a folder")
+        if not path:
+            return
+        self.selected_path = path
+        self.selected_is_dir = True
+        name = os.path.basename(os.path.normpath(path))
+        self.drop_title.configure(text=name)
+        self.drop_sub.configure(text="folder  \u00b7  zipped, then encrypted")
+        self.drop.configure(border_color=ACCENT)
+        self._status(f"Selected folder: {name}", "neutral")
+
+    # ------------------------------------------------------------- encrypt
     def on_encrypt(self):
-        self._run("encrypt")
-
-    def on_decrypt(self):
-        self._run("decrypt")
-
-    def _run(self, mode):
         key = self._require_key()
         if key is None:
             return
-        if not self.selected_file:
-            self._status("Choose a file first.", "error")
+        if not self.selected_path:
+            self._status("Choose a file or folder first.", "error")
             return
 
-        in_path = self.selected_file
-        base = os.path.basename(in_path)
-        if mode == "encrypt":
-            out_path = filedialog.asksaveasfilename(
-                title="Save encrypted file as",
-                initialfile=base + ".enc", defaultextension=".enc")
-        else:
-            suggested = (base[:-4] if base.lower().endswith(".enc")
-                         else "decrypted_" + base)
-            out_path = filedialog.asksaveasfilename(
-                title="Save decrypted file as", initialfile=suggested)
+        in_path = self.selected_path
+        base = os.path.basename(os.path.normpath(in_path))
+        out_path = filedialog.asksaveasfilename(
+            title="Save encrypted file as",
+            initialfile=base + ".enc", defaultextension=".enc")
         if not out_path:
             return
 
         self._busy(True)
-        self._status(f"{mode.capitalize()}ing\u2026", "info")
+        what = "folder" if self.selected_is_dir else "file"
+        self._status(f"Encrypting {what}\u2026", "info")
 
         def worker():
             try:
-                if mode == "encrypt":
-                    crypto_core.encrypt_file(in_path, out_path, key)
-                else:
-                    crypto_core.decrypt_file(in_path, out_path, key)
-                self.after(0, lambda: self._done(mode, out_path))
+                crypto_core.encrypt_path(in_path, out_path, key)
+                self.after(0, lambda: self._ok(
+                    f"Encryption complete \u2192 {os.path.basename(out_path)}"))
             except crypto_core.CryptoError as e:
                 msg = str(e)
-                self.after(0, lambda m=msg: self._fail(m))
+                self.after(0, lambda m=msg: self._err(m))
             except Exception as e:
                 msg = f"Unexpected error: {e}"
-                self.after(0, lambda m=msg: self._fail(m))
+                self.after(0, lambda m=msg: self._err(m))
 
         threading.Thread(target=worker, daemon=True).start()
 
-    def _done(self, mode, out_path):
-        self._busy(False)
-        self._status(
-            f"{mode.capitalize()}ion complete \u2192 {os.path.basename(out_path)}",
-            "success")
+    # ------------------------------------------------------------- decrypt
+    def on_decrypt(self):
+        key = self._require_key()
+        if key is None:
+            return
+        if not self.selected_path:
+            self._status("Choose the .enc file to decrypt first.", "error")
+            return
+        if self.selected_is_dir:
+            self._status("To decrypt, choose the .enc file (not a folder).",
+                         "error")
+            return
 
-    def _fail(self, msg):
+        in_path = self.selected_path
+        self._busy(True)
+        self._status("Decrypting\u2026", "info")
+
+        def worker():
+            try:
+                kind, data = crypto_core.decrypt_blob(in_path, key)
+                self.after(0, lambda: self._decrypt_finish(kind, data, in_path))
+            except crypto_core.CryptoError as e:
+                msg = str(e)
+                self.after(0, lambda m=msg: self._err(m))
+            except Exception as e:
+                msg = f"Unexpected error: {e}"
+                self.after(0, lambda m=msg: self._err(m))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _decrypt_finish(self, kind, data, in_path):
+        self._busy(False)
+        base = os.path.basename(in_path)
+        if kind == "folder":
+            dest = filedialog.askdirectory(
+                title="Choose where to extract the decrypted folder")
+            if not dest:
+                self._status("Decryption cancelled.", "neutral")
+                return
+            try:
+                crypto_core.extract_zip_bytes(data, dest)
+                self._ok(f"Folder restored \u2192 {dest}")
+            except Exception as e:
+                self._err(f"Could not extract folder: {e}")
+        else:
+            suggested = (base[:-4] if base.lower().endswith(".enc")
+                         else "decrypted_" + base)
+            out = filedialog.asksaveasfilename(
+                title="Save decrypted file as", initialfile=suggested)
+            if not out:
+                self._status("Decryption cancelled.", "neutral")
+                return
+            try:
+                with open(out, "wb") as f:
+                    f.write(data)
+                self._ok(f"File restored \u2192 {os.path.basename(out)}")
+            except Exception as e:
+                self._err(f"Could not save file: {e}")
+
+    # --------------------------------------------------------- completion
+    def _ok(self, msg):
+        self._busy(False)
+        self._status(msg, "success")
+
+    def _err(self, msg):
         self._busy(False)
         self._status(msg, "error")
 
-    # ---------------------------------------------------------- appearance
     def _on_mode_change(self, value):
         ctk.set_appearance_mode(value.lower())
 

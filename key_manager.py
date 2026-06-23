@@ -17,11 +17,16 @@ KEY_SIZE = 24  # 3-key Triple DES
 
 def generate_key() -> bytes:
     """
-    Generate a cryptographically secure, parity-adjusted 3-key 3DES key.
+    Generate a cryptographically secure 3-key Triple DES key.
 
-    ``get_random_bytes`` draws from the OS CSPRNG. ``adjust_key_parity``
-    sets the DES parity bits and rejects keys that degenerate to single
-    DES (k1 == k2 == k3); in that rare case we simply draw again.
+    This uses *Keying Option 1* (3TDEA): three independent 8-byte DES keys,
+    i.e. 24 bytes / 192 bits total, of which 168 are effective key bits.
+    Each 8-byte sub-key carries 56 key bits plus 8 odd-parity bits used for
+    error detection, as set by ``adjust_key_parity``.
+
+    The raw bytes come from ``get_random_bytes`` (the OS CSPRNG), which is
+    seeded from the operating system's hardware/true-entropy pool. Keys that
+    degenerate to single DES (k1 == k2 == k3) are rejected and re-drawn.
     """
     while True:
         try:
