@@ -1,11 +1,11 @@
 <div align="center">
-  <img src="app.png" width="92" alt="3DES File Encryptor" />
-  <h1>3DES File Encryptor</h1>
+  <h1>🔒 3DES File Encryptor</h1>
   <p><b>A modern desktop app for encrypting and decrypting any file or folder with Triple DES and authenticated integrity protection.</b></p>
 
   ![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)
   ![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)
   ![Built with CustomTkinter](https://img.shields.io/badge/UI-CustomTkinter-3D7BFC.svg)
+  ![Tests](https://img.shields.io/badge/tests-17%20passing-brightgreen.svg)
 </div>
 
 ---
@@ -14,10 +14,6 @@
 using **Triple DES (DESede)** in CBC mode, hardened with **HMAC-SHA256** authentication.
 It pairs a clean, themed interface with a security-first core: encrypt-then-MAC,
 key separation via HKDF, fresh random IVs, and constant-time verification.
-
-## Screenshot
-
-![App screenshot](docs/screenshot.png)
 
 ## Features
 
@@ -101,27 +97,60 @@ list of test cases (static + dynamic + manual GUI scenarios) are in
 ## Build a standalone executable
 
 ```bash
-# Windows  (use ; in --add-data)
+# Windows
 python -m PyInstaller --noconfirm --onefile --windowed --name "3DES-File-Encryptor" --icon app.ico --add-data "app.ico;." --collect-all customtkinter main.py
 
-# macOS / Linux  (use : in --add-data)
-python -m PyInstaller --noconfirm --onefile --windowed --name "3DES-File-Encryptor" --icon app.ico --add-data "app.ico:." --collect-all customtkinter main.py
+# macOS
+python3 -m PyInstaller --noconfirm --onefile --windowed --name "3DES-File-Encryptor" --icon app.icns --add-data "app.ico:." --collect-all customtkinter main.py
 ```
 
-The binary is written to `dist/`. PyInstaller does not cross-compile — build on Windows for a `.exe`, on macOS for a macOS binary.
+The binary is written to `dist/`. PyInstaller does not cross-compile — build on Windows for a `.exe`, on macOS for a `.app`.
 
 ## Project structure
 
 ```
-.
-├── main.py            # entry point
-├── gui.py             # CustomTkinter interface
-├── crypto_core.py     # 3DES + HMAC encryption/decryption (file & folder)
-├── key_manager.py     # key generation, save/load
-├── test_crypto.py     # unit tests (dynamic)
-├── TEST_DOCUMENTATION.md  # static + dynamic test cases
-├── app.ico / app.png  # application icon
-└── requirements.txt
+3DES-FILE-ENCRYPTOR/
+│   .gitignore
+│   app.ico / app.png          # application icon
+│   crypto_core.py             # 3DES + HMAC encryption/decryption engine
+│   gui.py                     # CustomTkinter interface
+│   key_manager.py             # key generation, save/load
+│   LICENSE
+│   main.py                    # entry point
+│   README.md
+│   requirements.txt
+│   test_crypto.py             # 17 automated unit tests
+│   TEST_DOCUMENTATION.md      # static + dynamic test case documentation
+│
+├───.github/
+│   └───workflows/
+│           tests.yml          # GitHub Actions CI
+│
+├───dist/
+│       3DES-File-Encryptor.exe    # pre-built Windows executable
+│
+├───Presentation/
+│       3DES_Encryption_Presentation.pptx
+│       3DES_Study_Guide.docx
+│       brandit_result.png
+│       File_encrypt.png
+│       Generate_key.png
+│       Pylnit_result.png
+│       test_results.png
+│
+└───Report/
+    │   main.tex                        # Overleaf LaTeX source
+    │   3DES_file_encryptor report.pdf  # compiled report (18 pages)
+    │
+    └───Figures/
+            app.png
+            fig_3des.png
+            fig_architecture.png
+            fig_container.png
+            fig_flow.png
+            fig_testchart.png
+            File_encrypt.png
+            Generate_key.png
 ```
 
 ## License
@@ -130,4 +159,4 @@ Released under the [MIT License](LICENSE).
 
 ---
 
-<sub>Originally built for my M.Sc. Software Engineering (Software Security) coursework, then refined into a standalone tool.</sub>
+<sub>Built for M.Sc. Software Engineering (Software Security) at University of Applied Sciences Europe, Summer 2026.</sub>
