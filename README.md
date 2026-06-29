@@ -65,8 +65,8 @@ Design decisions that go beyond just calling a crypto library:
 Requires Python 3.10+.
 
 ```bash
-git clone https://github.com/<your-username>/<repo>.git
-cd <repo>
+git clone https://github.com/jaskaranarora1/3DES-file-encryptor.git
+cd 3DES-file-encryptor
 pip install -r requirements.txt
 python main.py
 ```
